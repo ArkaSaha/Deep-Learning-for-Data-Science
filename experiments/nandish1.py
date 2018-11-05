@@ -5,7 +5,7 @@ from __future__ import unicode_literals
 
 
 from random import randint
-import utils
+import utils 
 import time
 
 import numpy as np
@@ -21,9 +21,9 @@ from torchvision import datasets, transforms
 
 #from util import get_normalized_data
 
-from cleverhans.attacks import FastGradientMethod
+from cleverhans.attacks import *
 from cleverhans.model import CallableModelWrapper
-from cleverhans.utils import AccuracyReport
+#from cleverhans.utils import AccuracyReport
 from cleverhans.utils_pytorch import convert_pytorch_model_to_tf
 
 
@@ -241,7 +241,7 @@ def eval_on_test_set():
 
 start=time.time()
 
-for epoch in range(1,1):
+for epoch in range(1,2):
     
     # divide the learning rate by 2 at epoch 10, 14 and 18
     if epoch==10 or epoch == 14 or epoch==18:
@@ -273,7 +273,8 @@ for epoch in range(1,1):
         minibatch_label=minibatch_label.to(device)
         
         # normalize the minibatch (this is the only difference compared to before!)
-        inputs = (minibatch_data - mean)/std
+        #inputs = (minibatch_data - mean)/std
+        inputs = minibatch_data
         
         # tell Pytorch to start tracking all operations that will be done on "inputs"
         inputs.requires_grad_()
@@ -394,14 +395,12 @@ acc = float(correct) / no_runs
 print('Adversarial accuracy with FGSM attack: {:.3f}'.format(acc * 100))
 
 
-
-
 #Create a Carlini Wagner L2 attack
 
 cw2_op = CarliniWagnerL2(cleverhans_model, back='tf', sess=sess)
 
-cw2_params = {y=None, y_target=None, nb_classes=None, batch_size=1, confidence=0, learning_rate=0.005, binary_search_steps=5,
-              max_iterations=1000, abort_early=True, initial_const=0.01, clip_min=0, clip_max=1}
+cw2_params = {'y': None, 'y_target': None, 'nb_classes': None, 'batch_size' : 1., 'confidence' : 0., 'learning_rate' : 0.005, 'binary_search_steps' :5,
+              'max_iterations' : 1000., 'abort_early' : True, 'initial_const' : 0.01, 'clip_min' : 0., 'clip_max' :1.}
 
 adv_x_op = cw2_op.generate(x_op1, **cw2_params)
 adv_preds_op = tf_net(adv_x_op)
@@ -420,15 +419,11 @@ print('Adversarial accuracy with Carlini Wagner L2 attack: {:.3f}'.format(acc * 
 
 
 
-
-
-
-
 #Create a DeepFool attack
 
 df_op = DeepFool(cleverhans_model, back='tf', sess=sess)
 
-df_params = {nb_candidate=10, overshoot=0.02, max_iter=50, nb_classes=None, clip_min=0.0, clip_max=1.0}
+df_params = {'nb_candidate' : 10, 'overshoot' :0.02, 'max_iter' : 50, 'nb_classes' : None, 'clip_min' : 0.0, 'clip_max' : 1.0}
 
 
 adv_x_op = df_op.generate(x_op1, **df_params)
@@ -448,21 +443,13 @@ print('Adversarial accuracy with DeepFool attack: {:.3f}'.format(acc * 100))
 
 
 
-
-
-
-
-
-
-
-
-
 #Create an attack with ElasticNet method:
 
 en_op = ElasticNetMethod(cleverhans_model, back='tf', sess=sess)
 
-en_params = {y=None, y_target=None, nb_classes=None, beta=0.01, decision_rule='EN', batch_size=1, confidence=0, 
-               learning_rate=0.01, binary_search_steps=9, max_iterations=1000, abort_early=False, initial_const=0.001, clip_min=0, clip_max=1}
+en_params = {'y' : None, 'y_target' : None, 'nb_classes' :None, 'beta': 0.01, 'decision_rule' : 'EN', 'batch_size' : 1, 'confidence' : 0, 
+               'learning_rate' : 0.01, 'binary_search_steps' :9, 'max_iterations' : 1000, 'abort_early' : False, 
+               'initial_const' :0.001, 'clip_min' : 0., 'clip_max': 1.}
 
 adv_x_op = en_op.generate(x_op1, **en_params)
 adv_preds_op = tf_net(adv_x_op)
@@ -480,22 +467,50 @@ acc = float(correct) / no_runs
 print('Adversarial accuracy with ElasticNet method attack: {:.3f}'.format(acc * 100))
 
 
+#Create a MomentumIterative method attack:
+
+mi_op = MomentumIterativeMethod(cleverhans_model, back='tf', sess=sess)
+
+mi_params = { 'eps' : 0.3, 'eps_iter' : 0.06, 'nb_iter' : 10, 'y': None, 'ord' : inf, 'decay_factor' : 1.0, 'clip_min' : None, 
+              'clip_max' : None, 'y_target' : None}
+
+adv_x_op = mi_op.generate(x_op1, **mi_params)
+adv_preds_op = tf_net(adv_x_op)
+
+no_runs = 10000
+correct = 0
+for xs, ys in test_loader:
+    xs, ys = Variable(xs), Variable(ys)
+    adv_example = sess.run(adv_x_op, feed_dict={x_op1: xs})
+    adv_preds = sess.run(adv_preds_op, feed_dict={adv_x_op: adv_example})
+    correct += (np.argmax(adv_preds, axis=1) == ys).sum()
+
+acc = float(correct) / no_runs
+
+print('Adversarial accuracy with MomentumIterative method attack: {:.3f}'.format(acc * 100))
 
 
 
+#Create a SaliencyMap based attack:
+
+sm_op = SaliencyMapMethod(cleverhans_model, back='tf', sess=sess)
+
+sm_params = { 'theta' : 1.0, 'gamma' : 1.0, 'nb_classes' : None, 'clip_min' :0.0, 'clip_max' : 1.0, 'y_target' : None, 'symbolic_impl' : True}
 
 
+adv_x_op = sm_op.generate(x_op1, **sm_params)
+adv_preds_op = tf_net(adv_x_op)
 
+no_runs = 10000
+correct = 0
+for xs, ys in test_loader:
+    xs, ys = Variable(xs), Variable(ys)
+    adv_example = sess.run(adv_x_op, feed_dict={x_op1: xs})
+    adv_preds = sess.run(adv_preds_op, feed_dict={adv_x_op: adv_example})
+    correct += (np.argmax(adv_preds, axis=1) == ys).sum()
 
+acc = float(correct) / no_runs
 
+print('Adversarial accuracy with SaliencyMap based attack: {:.3f}'.format(acc * 100))
 
-class cleverhans.attacks.MomentumIterativeMethod(model, back='tf', sess=None, dtypestr='float32')
-generate(x, **kwargs)
-parse_params(eps=0.3, eps_iter=0.06, nb_iter=10, y=None, ord=inf, decay_factor=1.0, clip_min=None, clip_max=None, y_target=None, **kwargs)
-
-
-
-class cleverhans.attacks.SaliencyMapMethod(model, back='tf', sess=None, dtypestr='float32')
-generate(x, **kwargs)
-parse_params(theta=1.0, gamma=1.0, nb_classes=None, clip_min=0.0, clip_max=1.0, y_target=None, symbolic_impl=True, **kwargs)
 
